@@ -40,11 +40,13 @@ module RSpec
     end
 
     attr_reader :context, :ex
+    attr_accessor :attempts, :flaky_result
 
     def initialize(ex, opts = {})
       @ex = ex
       @ex.metadata.merge!(opts)
       current_example.attempts ||= 0
+      @flaky_result = false
     end
 
     def current_example
@@ -125,7 +127,13 @@ module RSpec
 
         self.attempts += 1
 
-        break if example.exception.nil?
+        if @flaky_result
+          example.clear_exception
+          example.metadata[:skip] = 'Temporarily skipped, flagged as flaky'
+          puts example.metadata[:skip]
+        end
+
+        break if example.exception.nil? || example.skipped?
 
         example.metadata[:retry_exceptions] << example.exception
 
@@ -157,7 +165,8 @@ module RSpec
 
         # If the callback is defined, let's call it
         if RSpec.configuration.retry_callback
-          example.example_group_instance.instance_exec(example, &RSpec.configuration.retry_callback)
+          self.attempts = attempts
+          example.example_group_instance.instance_exec(self, &RSpec.configuration.retry_callback)
         end
 
         sleep sleep_interval if sleep_interval.to_f > 0
